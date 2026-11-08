@@ -595,13 +595,102 @@ export function drawArtChar(ctx, base, pose, x, y, h = 46, facing = 1, bob = 0, 
   Art.drawPuppet(ctx, im, x, y - (o.walk != null && !still ? 0 : bob), h, facing, still ? { breath: o.breath ?? o.walk } : { legs: 0.72, ...o });
   return true;
 }
-// 등신대 전신 그림(화면용) — 캔버스(W×H) 안에 발을 바닥에 맞춰 세운다. 숨쉬기 정도의 움직임
-export function drawFullBody(ctx, src, W, H, t = 0) {
-  const im = artImg(src);
+// ---------- 등신대 전신 그림(화면용) — 입은 옷·든 장비·가방·모자가 그대로 보인다 ----------
+// 몸통 옷 → 시트의 의상 그림(outfit_*.webp). 옷이 없으면 기본(최소한의 옷) 그림. 장비는 아이템 그림을 손·등·머리에 붙인다.
+export function outfitOf(equip = {}) {
+  const b = equip.body?.id, h = equip.head?.id, bk = equip.back?.id;
+  if (b === "royal_robe" || bk === "royal_robe" || h === "crown") return "special";
+  if (b === "combat_vest") return "combat";
+  if (b === "hazmat") return "lab";
+  if (b === "leather_jacket" || b === "fur_coat") return "explorer";
+  if (b) return "survivor";
+  return "base";
+}
+const ORDER = { base: ["base", "survivor"], survivor: ["survivor"], combat: ["combat", "survivor"], lab: ["lab", "survivor"], explorer: ["explorer", "survivor"], special: ["special", "survivor"] };
+function outfitImg(base, outfit) {
+  for (const o of ORDER[outfit] || ["survivor"]) { const im = artImg(base + "outfit_" + o + ".webp"); if (im) return im; }
+  return artImg(base + "full.webp");
+}
+// 그림 가장자리를 부드럽게 지워(페더) 배경과 섞이게 한 판을 만들어 둔다 + 가장자리 평균색(배경색)
+const feathered = new WeakMap();
+function featherOf(im) {
+  let f = feathered.get(im);
+  if (f) return f;
+  const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight;
+  const g = c.getContext("2d", { willReadFrequently: true }); g.drawImage(im, 0, 0);
+  let col = [52, 48, 45];
+  try { const d = g.getImageData(0, 0, c.width, 6).data; let r = 0, gg = 0, b = 0, n = 0; for (let i = 0; i < d.length; i += 4) { r += d[i]; gg += d[i + 1]; b += d[i + 2]; n++; } col = [r / n, gg / n, b / n].map(Math.round); } catch {}
+  g.globalCompositeOperation = "destination-in";
+  const fx = c.width * 0.22, fy = c.height * 0.06;
+  const lg = g.createLinearGradient(0, 0, c.width, 0); lg.addColorStop(0, "rgba(0,0,0,0)"); lg.addColorStop(fx / c.width, "#000"); lg.addColorStop(1 - fx / c.width, "#000"); lg.addColorStop(1, "rgba(0,0,0,0)");
+  g.fillStyle = lg; g.fillRect(0, 0, c.width, c.height);
+  const vg = g.createLinearGradient(0, 0, 0, c.height); vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(fy / c.height, "#000"); vg.addColorStop(1, "#000");
+  g.fillStyle = vg; g.fillRect(0, 0, c.width, c.height);
+  f = { c, col }; feathered.set(im, f);
+  return f;
+}
+// 아이템 그림을 (x,y) 중심에 크기 sz, 각도 rot 로
+function gearAt(ctx, id, x, y, sz, rot = 0, flip = false) {
+  const im = Art.img("items", id); if (!im) return;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(rot); if (flip) ctx.scale(-1, 1); ctx.drawImage(im, -sz / 2, -sz / 2, sz, sz); ctx.restore();
+}
+// 손에 든 것·등에 멘 것·머리에 쓴 것. box: 그림이 그려진 사각형 {x,y,w,h}(발 아래가 y+h). layer: "back"(몸 뒤) | "front"
+export function drawGearOn(ctx, equip, box, layer, outfit, facing = 1) {
+  const { x, y, w, h } = box, cx = x + w / 2;
+  const L = (fx) => cx + (fx - 0.5) * w * facing; // 그림 기준 좌우(오른쪽을 보면 그대로)
+  if (layer === "back") {
+    if (equip.back && equip.back.id !== "royal_robe") gearAt(ctx, equip.back.id, L(0.7), y + h * 0.33, h * 0.3, 0.15 * facing);
+    if (equip.quiver) gearAt(ctx, equip.quiver.id, L(0.3), y + h * 0.3, h * 0.26, -0.5 * facing);
+    return;
+  }
+  const head = equip.head?.id;
+  if (head && !(head === "crown" && outfit === "special")) gearAt(ctx, head, cx, y + h * (head === "gas_mask" ? 0.1 : 0.05), h * (head === "gas_mask" ? 0.12 : 0.15));
+  const hand = equip.hand?.id, off = equip.off?.id;
+  if (hand) { const it = ITEMS[hand]; gearAt(ctx, hand, L(0.1), y + h * 0.5, h * (it?.twoHand ? 0.36 : 0.25), (it?.ranged ? -0.2 : -0.5) * facing, facing < 0); }
+  if (off) gearAt(ctx, off, L(0.9), y + h * 0.5, h * 0.22, 0.3 * facing, facing < 0);
+}
+// 캔버스(W×H)를 배경으로 꽉 채우고, 인물을 발 바닥에 맞춰 세운 뒤 장비를 그린다
+export function drawDressed(ctx, base, equip, W, H, t = 0) {
+  const outfit = outfitOf(equip || {});
+  for (const v of Object.values(equip || {})) if (v?.id) Art.img("items", v.id); // 장비 그림 미리 불러오기
+  const im = outfitImg(base, outfit);
   if (!im) return false;
-  const s = Math.min(W / im.naturalWidth, H / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s;
-  const b = 1 + Math.sin(t * 1.8) * 0.006;
-  ctx.save(); ctx.translate(W / 2, H); ctx.scale(1, b); ctx.drawImage(im, -w / 2, -h, w, h); ctx.restore();
+  const f = featherOf(im), [r, g, b] = f.col;
+  // 배경: 그림 가장자리 색으로 꽉 채우고, 아래는 땅처럼 어둡게 + 가장자리 비네트
+  const bg = ctx.createLinearGradient(0, 0, 0, H);
+  bg.addColorStop(0, `rgb(${r + 8},${g + 6},${b + 4})`); bg.addColorStop(0.75, `rgb(${r},${g},${b})`); bg.addColorStop(1, `rgb(${r * 0.6 | 0},${g * 0.58 | 0},${b * 0.55 | 0})`);
+  ctx.fillStyle = bg; ctx.fillRect(0, 0, W, H);
+  const vg = ctx.createRadialGradient(W / 2, H * 0.45, Math.min(W, H) * 0.25, W / 2, H * 0.5, Math.max(W, H) * 0.75);
+  vg.addColorStop(0, "rgba(0,0,0,0)"); vg.addColorStop(1, "rgba(0,0,0,.45)"); ctx.fillStyle = vg; ctx.fillRect(0, 0, W, H);
+  const s = Math.min((W * 1.15) / im.naturalWidth, (H * 0.97) / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s;
+  const br = 1 + Math.sin(t * 1.8) * 0.006;
+  ctx.fillStyle = "rgba(0,0,0,.35)"; ctx.beginPath(); ctx.ellipse(W / 2, H - h * 0.015, w * 0.32, h * 0.025, 0, 0, Math.PI * 2); ctx.fill();
+  ctx.save(); ctx.translate(W / 2, H); ctx.scale(1, br);
+  const box = { x: -w / 2, y: -h, w, h };
+  drawGearOn(ctx, equip || {}, box, "back", outfit);
+  ctx.drawImage(f.c, -w / 2, -h, w, h);
+  drawGearOn(ctx, equip || {}, box, "front", outfit);
+  ctx.restore();
   return true;
 }
+// 필드 SD(2등신)에 장비를 붙인다: 손에 든 무기, 등(가방·활통), 머리(모자·방독면·왕관). layer "back" 은 캐릭터보다 먼저 그린다
+export function drawSdGear(ctx, equip = {}, x, y, h, facing, layer, pose = "idle") {
+  const w = h * 0.62, F = (dx) => x + dx * w * facing;
+  if (layer === "back") {
+    if (pose !== "pack" && equip.back && equip.back.id !== "royal_robe") gearAt(ctx, equip.back.id, F(-0.3), y - h * 0.42, h * 0.42, -0.1 * facing);
+    if (equip.quiver) gearAt(ctx, equip.quiver.id, F(-0.22), y - h * 0.5, h * 0.36, -0.6 * facing);
+    return;
+  }
+  const head = equip.head?.id;
+  if (head) gearAt(ctx, head, x + facing * w * 0.04, y - h * (head === "gas_mask" ? 0.66 : 0.9), h * (head === "gas_mask" ? 0.3 : 0.38));
+  const hand = equip.hand?.id;
+  if (hand && pose !== "shoot" && pose !== "sleep" && pose !== "campfire") { const it = ITEMS[hand]; gearAt(ctx, hand, F(0.36), y - h * 0.3, h * (it?.twoHand ? 0.62 : 0.44), (it?.ranged ? 0 : -0.55) * facing, facing < 0); }
+  const off = equip.off?.id;
+  if (off && pose !== "sleep" && pose !== "campfire") gearAt(ctx, off, F(-0.34), y - h * 0.3, h * 0.38, 0.2 * facing, facing < 0);
+}
+export function drawFullBody(ctx, src, W, H, t = 0) { // 장비 없는 단순 판(동료 등)
+  const base = src.replace(/[^/]+$/, "");
+  return drawDressed(ctx, base, {}, W, H, t) || false;
+}
 export const heroFull = (gender) => `assets/heroines/hero_${gender === "F" ? "f" : "m"}/full.webp`;
+export const heroBase = (gender) => `assets/heroines/hero_${gender === "F" ? "f" : "m"}/`;

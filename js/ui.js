@@ -8,7 +8,7 @@ import {
   CHAPTERS, ERAS, OLYMPIC_EVENTS, OLYMPICS, SHOP, STATS, ENDINGS, QUALITY, AFFIXES, BIOMES, WEATHER, SPECIALS, WSKILLS, SCOUT, RAIDER_BANDS, HEROINES, TALENTS, COOKS, COOK_SLOTS,
   companionArt,
 } from "./data.js";
-import { drawCharacter, drawCinematic, drawFullBody, heroFull } from "./render.js";
+import { drawCharacter, drawCinematic, drawDressed, heroBase } from "./render.js";
 import { makeRng } from "./rng.js";
 import { exportAll, importAll, saveGame, saveAccount } from "./storage.js";
 import * as Net from "./net.js";
@@ -183,7 +183,7 @@ export function openBag() {
   { // 등신대 그림(없으면 예전 코드 그림)
     const doll = m.querySelector("#doll").getContext("2d");
     let t = 0;
-    const anim = () => { if (!run || !m.isConnected) return; t += 0.05; doll.clearRect(0, 0, 180, 220); if (!drawFullBody(doll, heroFull(p.gender), 180, 220, t)) drawCharacter(doll, 90, 200, p.look, p.equip, 1, t, { scale: 4.2, detail: true, gender: p.gender, mount: null }); requestAnimationFrame(anim); };
+    const anim = () => { if (!run || !m.isConnected) return; t += 0.05; doll.clearRect(0, 0, 180, 220); if (!drawDressed(doll, heroBase(p.gender), p.equip, 180, 220, t)) drawCharacter(doll, 90, 200, p.look, p.equip, 1, t, { scale: 4.2, detail: true, gender: p.gender, mount: null }); requestAnimationFrame(anim); };
     anim();
   }
   m.querySelectorAll("[data-stat]").forEach((b) => (b.onclick = () => { S.spendStat(st, b.dataset.stat); run = false; m.close(); openBag(); }));
@@ -250,7 +250,7 @@ export function openDetail() {
     t += 0.04;
     const g = ctx.createLinearGradient(0, 0, 0, 360); g.addColorStop(0, "#2a2420"); g.addColorStop(1, "#4b3a2c");
     ctx.fillStyle = g; ctx.fillRect(0, 0, 300, 360);
-    if (!drawFullBody(ctx, heroFull(p.gender), 300, 350, t)) drawCharacter(ctx, 150, 330, p.look, p.equip, 1, t, { scale: mountObj ? 5 : 7.5, detail: true, gender: p.gender, mount: mountObj });
+    if (!drawDressed(ctx, heroBase(p.gender), p.equip, 300, 360, t)) drawCharacter(ctx, 150, 330, p.look, p.equip, 1, t, { scale: mountObj ? 5 : 7.5, detail: true, gender: p.gender, mount: mountObj });
     requestAnimationFrame(draw);
   };
   draw();
