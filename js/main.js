@@ -21,7 +21,7 @@ function drawPlayer(cam, mount) {
   const pose = G.swing > 0 ? (hand?.ranged ? "shoot" : "cheer") : G.moving ? "pack" : G.cheerT > G.t ? "happy" : G.nearFire && G.atBase ? "campfire" : "idle";
   ctx.save();
   if (G.sneak) ctx.globalAlpha = 0.6;
-  const ok = !mount && R.drawArtChar(ctx, PLAYER_ART[p.gender] || PLAYER_ART.M, pose, sx, sy, G.sneak ? 46 : 54, G.facing, G.moving ? Math.abs(Math.sin(G.phase)) * 2 : 0);
+  const ok = !mount && R.drawArtChar(ctx, PLAYER_ART[p.gender] || PLAYER_ART.M, pose, sx, sy, G.sneak ? 46 : 54, G.facing, 0, G.moving && pose === "pack" ? { walk: G.phase * (G.sneak ? 0.6 : 1) } : { breath: G.t });
   if (ok && hand && pose !== "shoot") { ctx.font = "16px sans-serif"; ctx.textAlign = "center"; ctx.fillText(hand.icon, sx + G.facing * 16, sy - 18); ctx.textAlign = "start"; } // 든 무기 표시
   if (!ok) R.drawCharacter(ctx, sx, sy, p.look, p.equip, G.facing, G.phase + (G.swing > 0 ? 2 : 0), { moving: G.moving || G.swing > 0, gender: p.gender, mount, scale: 1.05 });
   ctx.restore();
@@ -117,7 +117,7 @@ async function title() {
     <div class="hub"><button class="btn" id="hChar">🧬<span>캐릭터·유물</span></button><button class="btn" id="hVault">🗃️<span>구세계 금고</span></button><button class="btn" id="hRec">📜<span>생존 기록</span></button></div>
     <p class="muted small">생애 ${G.acc.runs}회 · 엔딩 ${G.acc.endings.length}/16 · 캐릭터마다 따로 이어서 할 수 있습니다</p></div>`;
   // 슬롯 초상화: 귀여운 2등신 + 장착한 장비
-  el.querySelectorAll("[data-por]").forEach((c) => { const d = slots[+c.dataset.por].d; const g = c.getContext("2d"); R.drawCharacter(g, 60, 118, d.player.look, d.player.equip, 1, 0, { scale: 2.6, gender: d.player.gender }); });
+  el.querySelectorAll("[data-por]").forEach((c) => { const d = slots[+c.dataset.por].d; const g = c.getContext("2d"); let n = 0; const paint = () => { g.clearRect(0, 0, c.width, c.height); if (R.drawFullBody(g, R.heroFull(d.player.gender), c.width, c.height)) return; if (++n < 40) return setTimeout(paint, 100); R.drawCharacter(g, 60, 118, d.player.look, d.player.equip, 1, 0, { scale: 2.6, gender: d.player.gender }); }; paint(); });
   el.querySelector("#hChar").onclick = () => UI.openCharacters(title);
   el.querySelector("#hVault").onclick = () => UI.openVaults(title);
   el.querySelector("#hRec").onclick = () => UI.openRecords();
@@ -154,11 +154,10 @@ function create() {
       <button class="btn primary big" id="go">대피소 문을 연다</button></div>`;
     const look = { skin: "#d9a982", hair: sel.gender === "F" ? "long" : "short", hairColor: "#2b211b" };
     const startEq = { body: { id: "rag_shirt" }, legs: { id: "rag_pants" }, hand: { id: JOBS[sel.job].start.find(([i]) => ITEMS[i].slot === "hand")?.[0] || "knife" } };
-    if (G.hasGL) { preloadHeroes(sel.gender); } if (G.hasGL) mountViewer(el.querySelector("#pv"), () => ({ look, equip: startEq, gender: sel.gender }), { spin: true });
-    else {
+    {
       const pv = el.querySelector("#pv").getContext("2d");
       let t = 0;
-      const loopPv = () => { if (!el.querySelector("#pv")) return; t += 0.05; pv.clearRect(0, 0, 160, 200); R.drawCharacter(pv, 80, 185, look, { body: null, legs: null }, 1, t, { scale: 4, detail: true, gender: sel.gender }); requestAnimationFrame(loopPv); };
+      const loopPv = () => { if (!el.querySelector("#pv")) return; t += 0.05; pv.clearRect(0, 0, 160, 200); if (!R.drawFullBody(pv, R.heroFull(sel.gender), 160, 200, t)) R.drawCharacter(pv, 80, 185, look, { body: null, legs: null }, 1, t, { scale: 4, detail: true, gender: sel.gender }); requestAnimationFrame(loopPv); };
       loopPv();
     }
     el.querySelector("#nm").oninput = (e) => (sel.name = e.target.value);
@@ -778,7 +777,7 @@ function siteEvent(ev) {
   if (ev.kind === "note") { G.world.noteSeen = true; UI.choice("📝 구겨진 쪽지", `<div class="notepaper">"보안실 비번 바꿈. 잊지 말 것 —<br><b style="font-size:28px;letter-spacing:6px">${ev.code}</b>"</div><small class="muted">잘 기억해 두세요(문 앞에서 입력).</small>`, [{ label: "기억했다", value: 1, cls: "primary" }]); G.afterAction(); return; }
   if (ev.kind === "heroine") {
     const h = HEROINES[ev.key];
-    UI.choice(`⭐ ${h.name} — ${h.title}`, `${h.art ? `<div class="heroface"><img src="${h.art}face_smile.png" alt=""><img src="${h.art}sd_happy.png" alt="" class="full"></div>` : ""}${h.bio}<br>특기 <b>${TALENTS[h.talent].name}</b>: ${TALENTS[h.talent].desc}<br><small class="muted">매력 ${h.req} 이상이면 마음을 연다 (내 매력 ${S.eff(st, "cha")})</small>`, [{ label: "함께 가자고 한다", value: 1, cls: "primary" }, { label: "그냥 지나간다", value: 0 }], { closable: true }).then((v) => {
+    UI.choice(`⭐ ${h.name} — ${h.title}`, `${h.art ? `<div class="heroface"><img src="${h.art}face_smile.png" alt=""><img src="${h.art}full.webp" alt="" class="full"></div>` : ""}${h.bio}<br>특기 <b>${TALENTS[h.talent].name}</b>: ${TALENTS[h.talent].desc}<br><small class="muted">매력 ${h.req} 이상이면 마음을 연다 (내 매력 ${S.eff(st, "cha")})</small>`, [{ label: "함께 가자고 한다", value: 1, cls: "primary" }, { label: "그냥 지나간다", value: 0 }], { closable: true }).then((v) => {
       if (!v) { ev.done = false; return; }
       const r = S.recruitHeroine(st, ev.key);
       if (r.ok) UI.toast(`⭐ ${h.name}이(가) 동료가 되었다! (동료 메뉴에서 호감을 쌓으면 청혼할 수 있다)`, "good");
@@ -1447,13 +1446,13 @@ function draw(dt) {
   st.companions.filter((c) => c.task === "base").slice(0, 10).forEach((c, i) => {
     const a = G.t * 0.15 + i * 1.7, r = (1.4 + (i % 3) * 0.6) * TILE;
     const x = bx + Math.cos(a) * r, y = by + Math.sin(a) * r * 0.7 + TILE;
-    list.push({ y, f: () => { const art = heroArt(c); if (art && R.drawArtChar(ctx, art, S.isNight(st) ? "sleep" : S.hasBuilding(st, "campfire") && i % 2 ? "campfire" : "idle", x - cam.x, y - cam.y, 46, -Math.sin(a) > 0 ? 1 : -1, Math.abs(Math.sin(G.t * 6 + i)) * 1.5)) return; R.drawCharacter(ctx, x - cam.x, y - cam.y, { skin: "#c9956d", hair: c.gender === "F" ? "long" : "short", hairColor: "#1b1410" }, { body: { id: c.role === "soldier" ? "combat_vest" : c.child ? "rag_shirt" : "leather_jacket" }, legs: { id: "rag_pants" } }, -Math.sin(a) > 0 ? 1 : -1, G.t * 6 + i, { moving: true, scale: c.child && !S.isAdult(c) ? 0.65 : 0.9, gender: c.gender }); } });
+    list.push({ y, f: () => { const art = heroArt(c); if (art && R.drawArtChar(ctx, art, S.isNight(st) ? "sleep" : S.hasBuilding(st, "campfire") && i % 2 ? "campfire" : "idle", x - cam.x, y - cam.y, 46, -Math.sin(a) > 0 ? 1 : -1, 0, { walk: G.t * 6 + i })) return; R.drawCharacter(ctx, x - cam.x, y - cam.y, { skin: "#c9956d", hair: c.gender === "F" ? "long" : "short", hairColor: "#1b1410" }, { body: { id: c.role === "soldier" ? "combat_vest" : c.child ? "rag_shirt" : "leather_jacket" }, legs: { id: "rag_pants" } }, -Math.sin(a) > 0 ? 1 : -1, G.t * 6 + i, { moving: true, scale: c.child && !S.isAdult(c) ? 0.65 : 0.9, gender: c.gender }); } });
   });
   // 동행 동료/동물(발자취를 따라옴)
   let k = 12;
   for (const c of st.companions.filter((c) => c.task === "follow")) {
     const tp = G.trail[Math.min(k, G.trail.length - 1)] || [p.x - 30, p.y]; k += 12;
-    list.push({ y: tp[1], f: () => { const art = heroArt(c); const fight = G.mobs.some((m) => m.kind === "enemy" && m.hp > 0 && Math.hypot(m.x - tp[0], m.y - tp[1]) < 200); if (art && R.drawArtChar(ctx, art, fight ? "shoot" : G.moving ? "pack" : "idle", tp[0] - cam.x, tp[1] - cam.y, 48, G.facing, G.moving ? Math.abs(Math.sin(G.phase)) * 2 : 0)) return; R.drawCharacter(ctx, tp[0] - cam.x, tp[1] - cam.y, { skin: "#c9956d", hair: c.gender === "F" ? "long" : "short", hairColor: "#1b1410" }, { body: { id: c.role === "soldier" ? "combat_vest" : "leather_jacket" }, legs: { id: "leather_pants" }, feet: { id: "boots" }, hand: { id: c.role === "soldier" ? "rifle" : "knife" } }, G.facing, G.phase, { moving: G.moving, gender: c.gender }); } });
+    list.push({ y: tp[1], f: () => { const art = heroArt(c); const fight = G.mobs.some((m) => m.kind === "enemy" && m.hp > 0 && Math.hypot(m.x - tp[0], m.y - tp[1]) < 200); if (art && R.drawArtChar(ctx, art, fight ? "shoot" : G.moving ? "pack" : "idle", tp[0] - cam.x, tp[1] - cam.y, 48, G.facing, 0, G.moving && !fight ? { walk: G.phase + 1.3 } : { breath: G.t + 0.7 })) return; R.drawCharacter(ctx, tp[0] - cam.x, tp[1] - cam.y, { skin: "#c9956d", hair: c.gender === "F" ? "long" : "short", hairColor: "#1b1410" }, { body: { id: c.role === "soldier" ? "combat_vest" : "leather_jacket" }, legs: { id: "leather_pants" }, feet: { id: "boots" }, hand: { id: c.role === "soldier" ? "rifle" : "knife" } }, G.facing, G.phase, { moving: G.moving, gender: c.gender }); } });
   }
   for (const a of st.animals.filter((a) => a.task === "follow" && st.player.mount?.uid !== a.uid)) {
     const tp = G.trail[Math.min(k, G.trail.length - 1)] || [p.x + 30, p.y]; k += 12;

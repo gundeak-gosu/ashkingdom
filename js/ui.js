@@ -8,7 +8,7 @@ import {
   CHAPTERS, ERAS, OLYMPIC_EVENTS, OLYMPICS, SHOP, STATS, ENDINGS, QUALITY, AFFIXES, BIOMES, WEATHER, SPECIALS, WSKILLS, SCOUT, RAIDER_BANDS, HEROINES, TALENTS, COOKS, COOK_SLOTS,
   companionArt,
 } from "./data.js";
-import { drawCharacter, drawCinematic } from "./render.js";
+import { drawCharacter, drawCinematic, drawFullBody, heroFull } from "./render.js";
 import { makeRng } from "./rng.js";
 import { exportAll, importAll, saveGame, saveAccount } from "./storage.js";
 import * as Net from "./net.js";
@@ -180,11 +180,10 @@ export function openBag() {
     ${G.atBase ? '<button class="btn" id="depositAll">📦 재료·음식 전부 기지 창고에 넣기</button>' : ""}
   `, { wide: true });
   let run = true;
-  if (viewer3d) viewer3d(m.querySelector("#doll"), () => ({ look: p.look, equip: p.equip, gender: p.gender }), { spin: false });
-  else {
+  { // 등신대 그림(없으면 예전 코드 그림)
     const doll = m.querySelector("#doll").getContext("2d");
     let t = 0;
-    const anim = () => { if (!run || !m.isConnected) return; t += 0.05; doll.clearRect(0, 0, 180, 220); drawCharacter(doll, 90, 200, p.look, p.equip, 1, t, { scale: 4.2, detail: true, gender: p.gender, mount: null }); requestAnimationFrame(anim); };
+    const anim = () => { if (!run || !m.isConnected) return; t += 0.05; doll.clearRect(0, 0, 180, 220); if (!drawFullBody(doll, heroFull(p.gender), 180, 220, t)) drawCharacter(doll, 90, 200, p.look, p.equip, 1, t, { scale: 4.2, detail: true, gender: p.gender, mount: null }); requestAnimationFrame(anim); };
     anim();
   }
   m.querySelectorAll("[data-stat]").forEach((b) => (b.onclick = () => { S.spendStat(st, b.dataset.stat); run = false; m.close(); openBag(); }));
@@ -243,8 +242,7 @@ export function openDetail() {
     <div class="pick"><small>머리색</small>${colors.map((c) => `<button class="sw" style="background:${c}" data-hc="${c}"></button>`).join("")}</div>
     <p class="muted">드래그해서 돌려 보세요. 옷·무기·탈것은 장착하면 그대로 모습에 반영됩니다. 맨몸(기본 속옷)에서 시작해 입는 옷에 따라 실루엣이 바뀝니다.</p>`, { wide: true });
   const mountObj = mountOf(p);
-  if (viewer3d) { viewer3d(m.querySelector("#big"), () => ({ look: p.look, equip: p.equip, gender: p.gender, mount: mountObj }), { spin: true }); }
-  const ctx = viewer3d ? null : m.querySelector("#big").getContext("2d");
+  const ctx = m.querySelector("#big").getContext("2d"); // 등신대 그림
   let t = 0;
   const draw = () => {
     if (!ctx) return;
@@ -252,7 +250,7 @@ export function openDetail() {
     t += 0.04;
     const g = ctx.createLinearGradient(0, 0, 0, 360); g.addColorStop(0, "#2a2420"); g.addColorStop(1, "#4b3a2c");
     ctx.fillStyle = g; ctx.fillRect(0, 0, 300, 360);
-    drawCharacter(ctx, 150, 330, p.look, p.equip, 1, t, { scale: mountObj ? 5 : 7.5, detail: true, gender: p.gender, mount: mountObj });
+    if (!drawFullBody(ctx, heroFull(p.gender), 300, 350, t)) drawCharacter(ctx, 150, 330, p.look, p.equip, 1, t, { scale: mountObj ? 5 : 7.5, detail: true, gender: p.gender, mount: mountObj });
     requestAnimationFrame(draw);
   };
   draw();

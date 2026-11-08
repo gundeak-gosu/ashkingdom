@@ -336,7 +336,7 @@ export function drawAnimal(ctx, type, x, y, phase, moving, facing = 1, tamed = f
   const big = { horse: 1.3, cow: 1.25, boar: 1.0, wolf: 1.0, dog: 0.85, deer: 1.05, goat: 0.8, chicken: 0.5 }[type] || 1;
   if (Art.img("mobs", type)) { // 그림 동물: 걸을 때 통통 튄다
     ctx.fillStyle = "rgba(0,0,0,0.28)"; ctx.beginPath(); ctx.ellipse(x, y + 1, 13 * big, 4 * big, 0, 0, Math.PI * 2); ctx.fill();
-    Art.drawSprite(ctx, "mobs", type, x, y + 3, 30 * big + 6, facing, moving ? Math.abs(Math.sin(phase * 1.4)) * 2.5 : 0);
+    Art.drawSprite(ctx, "mobs", type, x, y + 3, 30 * big + 6, facing, 0, moving ? { walk: phase * 1.4, legs: 0.62, lift: 0.08, stride: 0.05 } : { breath: phase * 0.3 });
     if (tamed) { ctx.fillStyle = "#ff6b8a"; ctx.font = "11px sans-serif"; ctx.fillText("♥", x - 3, y - 30 * big - 8); }
     return;
   }
@@ -372,7 +372,9 @@ export function drawEnemy(ctx, e, def, phase) {
   if (Art.img("mobs", sp)) {
     const h = ENEMY_H[sp] || 44;
     ctx.fillStyle = "rgba(0,0,0,0.3)"; ctx.beginPath(); ctx.ellipse(e.x, e.y + 1, h * 0.3, h * 0.09, 0, 0, Math.PI * 2); ctx.fill();
-    Art.drawSprite(ctx, "mobs", sp, e.x, e.y + 3, h, (e.vx ?? 1) < 0 ? -1 : 1, Math.abs(Math.sin(phase)) * 2);
+    const walking = e.moving !== false && (e.vx || e.vy || e.moving);
+    const quad = sp === "rad_rat" || sp === "feral_dog";
+    Art.drawSprite(ctx, "mobs", sp, e.x, e.y + 3, h, (e.vx ?? 1) < 0 ? -1 : 1, 0, walking ? { walk: phase, legs: quad ? 0.6 : 0.7 } : { breath: phase * 0.3 });
     hpBar(ctx, e.x, e.y - h - 6, e.hp / e.maxHp);
     return;
   }
@@ -583,12 +585,23 @@ export function drawCinematic(ctx, w, h, st, t, scene = {}) {
 const artCache = {};
 export function artImg(src) { let i = artCache[src]; if (!i) { i = artCache[src] = new Image(); i.src = src; } return i.complete && i.naturalWidth ? i : null; }
 // pose: idle·happy·cheer·shoot·pack·campfire·sleep. 발밑(x,y)에 세운다. h = 화면 높이(px)
-export function drawArtChar(ctx, base, pose, x, y, h = 46, facing = 1, bob = 0) {
+// o: { walk: 걸음 위상(걷는 중), breath: 시간(서 있을 때 숨쉬기) } — 걸을 때 발을 번갈아 내딛는다(art.js drawPuppet)
+export function drawArtChar(ctx, base, pose, x, y, h = 46, facing = 1, bob = 0, o = {}) {
   const im = artImg(base + "sd_" + pose + ".png") || artImg(base + "sd_idle.png");
   if (!im) return false;
   const w = (im.naturalWidth / im.naturalHeight) * h;
   ctx.fillStyle = "rgba(0,0,0,.25)"; ctx.beginPath(); ctx.ellipse(x, y, w * 0.32, 4, 0, 0, Math.PI * 2); ctx.fill();
-  ctx.save(); ctx.translate(x, y - bob); if (facing < 0) ctx.scale(-1, 1);
-  ctx.drawImage(im, -w / 2, -h, w, h); ctx.restore();
+  const still = pose === "sleep" || pose === "campfire"; // 앉거나 누운 그림은 다리를 움직이지 않는다
+  Art.drawPuppet(ctx, im, x, y - (o.walk != null && !still ? 0 : bob), h, facing, still ? { breath: o.breath ?? o.walk } : { legs: 0.72, ...o });
   return true;
 }
+// 등신대 전신 그림(화면용) — 캔버스(W×H) 안에 발을 바닥에 맞춰 세운다. 숨쉬기 정도의 움직임
+export function drawFullBody(ctx, src, W, H, t = 0) {
+  const im = artImg(src);
+  if (!im) return false;
+  const s = Math.min(W / im.naturalWidth, H / im.naturalHeight), w = im.naturalWidth * s, h = im.naturalHeight * s;
+  const b = 1 + Math.sin(t * 1.8) * 0.006;
+  ctx.save(); ctx.translate(W / 2, H); ctx.scale(1, b); ctx.drawImage(im, -w / 2, -h, w, h); ctx.restore();
+  return true;
+}
+export const heroFull = (gender) => `assets/heroines/hero_${gender === "F" ? "f" : "m"}/full.webp`;
